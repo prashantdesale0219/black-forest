@@ -11,28 +11,24 @@ const nextConfig = {
         protocol: 'http',
         hostname: 'localhost',
         port: '5000',
-        pathname: '/uploads/**',
+        pathname: '/**',
       },
       {
         protocol: 'https',
         hostname: 'deepnex-fashionex.onrender.com',
-        pathname: '/uploads/**',
+        pathname: '/**',
       },
     ],
+    unoptimized: true,
   },
   // Optimize static asset loading
    experimental: {
      optimizeCss: true,
      optimizeServerReact: true,
    },
-   // Proxy configuration for backend
+   // Proxy configuration disabled as we're using direct backend URL
    async rewrites() {
-     return [
-       {
-         source: '/api/:path*',
-         destination: process.env.NEXT_PUBLIC_BACKEND_URL + '/api/:path*',
-       },
-     ];
+     return [];
    },
 };
 

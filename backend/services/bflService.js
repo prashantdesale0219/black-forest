@@ -7,7 +7,11 @@ require('dotenv').config();
 class BFLService {
   constructor() {
     this.apiKey = process.env.BFL_API_KEY;
-    this.baseUrl = process.env.BFL_API_URL || 'https://api.bfl.ai/v1';
+    this.baseUrl = process.env.BFL_BASE_URL || 'https://api.bfl.ai/v1';
+    console.log('BFL Service initialized with:', {
+      apiKey: this.apiKey ? '***' + this.apiKey.substring(this.apiKey.length - 4) : 'undefined',
+      baseUrl: this.baseUrl
+    });
     this.client = axios.create({
       baseURL: this.baseUrl,
       headers: {
@@ -121,9 +125,17 @@ class BFLService {
           return result;
         }
         
-        // If still processing, wait and retry
-        if (result.status === 'processing') {
-          console.log(`Job still processing. Progress: ${result.progress || 'unknown'}. Attempt ${attempts + 1}/${maxAttempts}`);
+        // If ready, treat as succeeded (BFL API sometimes returns 'Ready' instead of 'succeeded')
+        if (result.status === 'Ready') {
+          console.log(`Job status is 'Ready', treating as succeeded`);
+          // Normalize the status to 'succeeded' for consistent handling
+          result.status = 'succeeded';
+          return result;
+        }
+        
+        // If still processing or pending, wait and retry
+        if (result.status === 'processing' || result.status === 'Pending' || result.status === 'pending') {
+          console.log(`Job still processing. Status: ${result.status}, Progress: ${result.progress || 'unknown'}. Attempt ${attempts + 1}/${maxAttempts}`);
           await new Promise(resolve => setTimeout(resolve, delay));
           delay = Math.min(delay * 1.5, 30000); // Exponential backoff, max 30s
           attempts++;

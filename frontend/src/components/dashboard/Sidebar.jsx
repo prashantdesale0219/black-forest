@@ -44,21 +44,27 @@ const Sidebar = () => {
     },
     {
       name: 'Models',
-      href: '/models',
+      href: '/app/models',
       icon: User,
-      current: pathname === '/models'
+      current: pathname.includes('/app/models')
     },
     {
-      name: 'Clothes',
-      href: '/clothes',
+      name: 'Garments',
+      href: '/app/garments',
       icon: Shirt,
-      current: pathname === '/clothes'
+      current: pathname.includes('/app/garments')
+    },
+    {
+      name: 'Scenes',
+      href: '/app/scenes',
+      icon: Home,
+      current: pathname.includes('/app/scenes')
     },
     {
       name: 'Try-On',
-      href: '/tryon',
+      href: '/app/tryon',
       icon: Zap,
-      current: pathname === '/tryon'
+      current: pathname.includes('/app/tryon')
     }
   ];
 

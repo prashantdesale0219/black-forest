@@ -15,6 +15,11 @@ const ModelSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  status: {
+    type: String,
+    enum: ['pending', 'completed', 'error'],
+    default: 'completed'
+  },
   metadata: {
     width: Number,
     height: Number,

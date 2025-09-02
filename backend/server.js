@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const compression = require('compression');
+const path = require('path');
 require('dotenv').config();
 
 // Import routes
@@ -86,7 +87,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 
 // Static files
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+console.log('Static files path:', path.join(__dirname, 'uploads'));
 
 // Health check endpoint
 app.get('/health', (req, res) => {

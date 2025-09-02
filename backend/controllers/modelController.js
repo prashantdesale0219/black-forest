@@ -50,6 +50,7 @@ const modelController = {
         userId,
         type: 'generated',
         url: 'pending', // Will be updated when generation completes
+        status: 'pending', // Set status to pending
         metadata: {
           width: parseInt(width),
           height: parseInt(height),
@@ -184,8 +185,8 @@ const modelController = {
       const userId = req.user.id;
       const { name } = req.body;
       
-      // Create file URL
-      const fileUrl = `${req.protocol}://${req.get('host')}/uploads/models/${req.file.filename}`;
+      // Create file URL - use relative path for better compatibility with frontend
+      const fileUrl = `/uploads/models/${req.file.filename}`;
       
       // Create model record
       const model = new Model({
@@ -344,11 +345,100 @@ async function processModelGeneration(pollingUrl, modelId, userId, credits) {
     const result = await bflService.pollWithBackoff(pollingUrl);
     
     if (result.status === 'succeeded' && result.result && result.result.sample) {
-      // Update model with result URL
-      await Model.findByIdAndUpdate(modelId, {
-        url: result.result.sample,
-        updatedAt: Date.now()
-      });
+      // Download the image from the external URL and save it locally
+      const fs = require('fs');
+      const path = require('path');
+      const axios = require('axios');
+      
+      // Create directory if it doesn't exist
+      const uploadDir = path.join(__dirname, '../uploads/models');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+        console.log(`Created directory: ${uploadDir}`);
+      }
+      
+      // Generate a unique filename
+      const filename = `model_${modelId}_${Date.now()}.jpg`;
+      const filePath = path.join(uploadDir, filename);
+      
+      try {
+        console.log(`Attempting to download image from BFL API for model ${modelId}`);
+        console.log(`Full result from BFL API:`, JSON.stringify(result, null, 2));
+        
+        // Check if result has the expected structure
+        if (!result.result) {
+          throw new Error(`Invalid result structure from BFL API: ${JSON.stringify(result)}`);
+        }
+        
+        // Get the image URL from the appropriate field based on API response structure
+        const imageUrl = result.result.sample || result.result.image || result.result.url;
+        if (!imageUrl) {
+          throw new Error(`No image URL found in BFL API response: ${JSON.stringify(result)}`);
+        }
+        
+        console.log(`Found image URL: ${imageUrl}`);
+        
+        // Download the image
+        console.log(`Making HTTP request to: ${imageUrl}`);
+        const response = await axios.get(imageUrl, { 
+          responseType: 'arraybuffer',
+          timeout: 60000, // 60 seconds timeout
+          headers: {
+            'Accept': 'image/jpeg,image/png,image/*'
+          },
+          validateStatus: function (status) {
+            return status >= 200 && status < 300; // Accept only success status codes
+          }
+        });
+        
+        if (!response.data || response.data.length === 0) {
+          throw new Error('Downloaded image data is empty');
+        }
+        
+        console.log(`Image download successful. Content length: ${response.headers['content-length']} bytes`);
+        console.log(`Content type: ${response.headers['content-type']}`);
+        
+        // Write file to disk
+        try {
+          fs.writeFileSync(filePath, Buffer.from(response.data));
+          console.log(`✅ Image successfully written to ${filePath}`);
+        } catch (writeError) {
+          console.error(`❌ Error writing file to disk:`, writeError);
+          console.error(`Write error details: ${writeError.message}`);
+          console.error(`Directory permissions: ${fs.statSync(uploadDir).mode.toString(8)}`);
+          throw writeError;
+        }
+        
+        // Verify file exists after writing
+        if (!fs.existsSync(filePath)) {
+          throw new Error(`File was not created at ${filePath}`);
+        }
+        
+        const stats = fs.statSync(filePath);
+        console.log(`File size: ${stats.size} bytes`);
+        
+        // Create a local URL for the image
+        const fileUrl = `/uploads/models/${filename}`;
+        console.log(`Setting model URL to: ${fileUrl}`);
+        
+        // Update model with local URL and set status to completed
+        await Model.findByIdAndUpdate(modelId, {
+          url: fileUrl,
+          status: 'completed',
+          updatedAt: Date.now()
+        });
+        
+        console.log(`✅ Model ${modelId} updated with local URL: ${fileUrl}`);
+      } catch (downloadError) {
+        console.error(`❌ Error downloading image for model ${modelId}:`, downloadError);
+        console.error(`Error details: ${downloadError.message}`);
+        if (downloadError.response) {
+          console.error(`Response status: ${downloadError.response.status}`);
+          console.error(`Response headers:`, JSON.stringify(downloadError.response.headers));
+          console.error(`Response data:`, downloadError.response.data);
+        }
+        throw downloadError;
+      }
       
       console.log(`Model generation completed for model ${modelId}`);
     } else {
@@ -357,6 +447,7 @@ async function processModelGeneration(pollingUrl, modelId, userId, credits) {
       // Update model with error status
       await Model.findByIdAndUpdate(modelId, {
         url: 'error',
+        status: 'error',
         updatedAt: Date.now()
       });
       
@@ -380,6 +471,7 @@ async function processModelGeneration(pollingUrl, modelId, userId, credits) {
     // Update model with error status
     await Model.findByIdAndUpdate(modelId, {
       url: 'error',
+      status: 'error',
       updatedAt: Date.now()
     });
     

@@ -1,12 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { getUserData } from '../../lib/cookieUtils';
 
 const DashboardHeader = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [user, setUser] = useState(null);
   const mobileDropdownRef = useRef(null);
   const desktopDropdownRef = useRef(null);
+  
+  useEffect(() => {
+    const userData = getUserData();
+    if (userData) {
+      setUser(userData);
+    }
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
