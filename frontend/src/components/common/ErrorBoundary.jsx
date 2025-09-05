@@ -38,13 +38,22 @@ export default function ErrorBoundary({ children }) {
         return;
       }
 
+      // Ignore image loading errors
+      if (event.target && event.target.tagName === 'IMG') {
+        event.preventDefault();
+        return;
+      }
+
       // Check if error exists before logging
       if (event.error) {
         console.error('Error caught by ErrorBoundary:', event.error);
         setHasError(true);
       } else {
         // Handle undefined errors gracefully
-        console.warn('Undefined error caught by ErrorBoundary');
+        // Only log once to reduce console spam
+        if (Math.random() < 0.1) { // Log only ~10% of undefined errors
+          console.warn('Undefined error caught by ErrorBoundary');
+        }
         // Don't set hasError to true for undefined errors
         // as they're usually non-critical
       }

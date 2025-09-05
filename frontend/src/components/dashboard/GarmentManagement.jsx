@@ -7,6 +7,28 @@ import { Upload, Shirt, Trash2, Eye, XCircle } from 'lucide-react';
 import Image from 'next/image';
 import { getAuthToken } from '../../lib/cookieUtils';
 
+// Helper function to normalize image URLs
+const normalizeImageUrl = (url) => {
+  if (!url) return '/placeholder-image.jpg';
+  
+  // If URL is already absolute with http/https, use it directly
+  if (url.startsWith('http')) {
+    return url;
+  }
+  
+  // For relative URLs, combine with API URL but avoid double slashes
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  // Remove any duplicate slashes between API URL and path
+  const normalizedPath = url.startsWith('/') ? url : `/${url}`;
+  
+  // Make sure we don't have duplicate API URLs
+  if (normalizedPath.includes(apiUrl)) {
+    return normalizedPath;
+  }
+  
+  return `${apiUrl}${normalizedPath}`;
+};
+
 const GarmentManagement = () => {
   const [garments, setGarments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +83,7 @@ const GarmentManagement = () => {
 
     setUploading(true);
     const formData = new FormData();
-    formData.append('garment', file);
+    formData.append('image', file);
     formData.append('name', garmentName);
     formData.append('category', category);
 
@@ -227,12 +249,14 @@ const GarmentManagement = () => {
               <div key={garment._id} className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow duration-200">
                 <div className="relative aspect-square group">
                   <Image
-                    src={garment.url}
+                    src={normalizeImageUrl(garment.url)}
                     alt={garment.name}
                     fill
                     className="object-cover"
+                    crossOrigin="anonymous"
                     onError={(e) => {
-                      e.target.src = '/placeholder-model.jpg';
+                      console.log('Error loading garment thumbnail:', garment.url);
+                      e.target.src = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%22500%22%20height%3D%22500%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20width%3D%22500%22%20height%3D%22500%22%20fill%3D%22%23f0f0f0%22%2F%3E%3Ctext%20x%3D%22250%22%20y%3D%22250%22%20font-size%3D%2220%22%20text-anchor%3D%22middle%22%20alignment-baseline%3D%22middle%22%20fill%3D%22%23999999%22%3EImage%20not%20available%3C%2Ftext%3E%3C%2Fsvg%3E';
                     }}
                   />
                   <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center space-x-2">
@@ -309,13 +333,16 @@ const GarmentManagement = () => {
               
               <div className="mb-4">
                 <Image
-                  src={selectedGarment.url}
+                  src={normalizeImageUrl(selectedGarment.url)}
                   alt={selectedGarment.name}
                   width={500}
                   height={500}
                   className="w-full h-auto rounded-lg"
+                  crossOrigin="anonymous"
                   onError={(e) => {
-                    e.target.src = '/placeholder-model.jpg';
+                    console.log('Error loading garment image:', selectedGarment.url);
+                    e.target.src = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%22500%22%20height%3D%22500%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20width%3D%22500%22%20height%3D%22500%22%20fill%3D%22%23f0f0f0%22%2F%3E%3Ctext%20x%3D%22250%22%20y%3D%22250%22%20font-size%3D%2220%22%20text-anchor%3D%22middle%22%20alignment-baseline%3D%22middle%22%20fill%3D%22%23999999%22%3EImage%20not%20available%3C%2Ftext%3E%3C%2Fsvg%3E';
+                    toast.error('Failed to load garment image');
                   }}
                 />
               </div>

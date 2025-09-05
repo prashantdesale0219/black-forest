@@ -18,15 +18,22 @@ const TryOnInterface = () => {
   const [submitting, setSubmitting] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [pollingInterval, setPollingInterval] = useState(null);
+  const [isIndianModel, setIsIndianModel] = useState(true);
 
   useEffect(() => {
+    // Initial data fetch
     fetchData();
     fetchTryOnJobs();
 
-    // Setup polling for job status updates
+    // Setup polling for job status updates with error handling
     const interval = setInterval(() => {
-      fetchTryOnJobs();
-    }, 10000); // Poll every 10 seconds
+      try {
+        fetchTryOnJobs();
+      } catch (error) {
+        console.error('Error during polling:', error);
+        // Continue polling despite errors
+      }
+    }, 15000); // Poll every 15 seconds (reduced frequency to prevent excessive requests)
 
     setPollingInterval(interval);
 
@@ -45,19 +52,45 @@ const TryOnInterface = () => {
         Authorization: `Bearer ${token}`
       };
 
-      // Fetch models, garments, and scenes in parallel
+      const controller = new AbortController();
+      // Set timeout to prevent hanging requests
+      const timeoutDuration = 30000; // Increase timeout to 30 seconds
+      const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+
+      // Fetch models, garments, and scenes in parallel with timeout
       const [modelsRes, garmentsRes, scenesRes] = await Promise.all([
-        axios.get('/api/models', { headers }),
-        axios.get('/api/garments', { headers }),
-        axios.get('/api/scenes', { headers })
+        axios.get('/api/models', { 
+          headers, 
+          signal: controller.signal,
+          timeout: timeoutDuration 
+        }),
+        axios.get('/api/garments', { 
+          headers, 
+          signal: controller.signal,
+          timeout: timeoutDuration 
+        }),
+        axios.get('/api/scenes', { 
+          headers, 
+          signal: controller.signal,
+          timeout: timeoutDuration 
+        })
       ]);
 
-      setModels(modelsRes.data.data?.models || []);
-      setGarments(garmentsRes.data.data?.garments || []);
-      setScenes(scenesRes.data.data?.scenes || []);
+      clearTimeout(timeoutId);
+
+      // Safely set data with null checks
+      if (modelsRes?.data?.data) setModels(modelsRes.data.data?.models || []);
+      if (garmentsRes?.data?.data) setGarments(garmentsRes.data.data?.garments || []);
+      if (scenesRes?.data?.data) setScenes(scenesRes.data.data?.scenes || []);
     } catch (error) {
-      console.error('Error fetching data:', error);
-      toast.error('Failed to fetch data for try-on');
+      // Handle aborted requests gracefully
+      if (error.name === 'AbortError' || error.name === 'CanceledError') {
+        console.log('Data fetch request aborted due to timeout');
+        toast.warning('Data fetch timed out. Some items may not be displayed.');
+      } else {
+        console.error('Error fetching data:', error);
+        toast.error('Failed to fetch data for try-on');
+      }
     } finally {
       setLoading(false);
     }
@@ -66,14 +99,33 @@ const TryOnInterface = () => {
   const fetchTryOnJobs = async () => {
     try {
       const token = getAuthToken();
+      const controller = new AbortController();
+      
+      // Set timeout to prevent hanging requests
+      const timeoutDuration = 30000; // Increase timeout to 30 seconds
+      const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+      
       const response = await axios.get('/api/tryon', {
         headers: {
           Authorization: `Bearer ${token}`
-        }
+        },
+        signal: controller.signal,
+        timeout: timeoutDuration // Axios timeout as backup
       });
       
-      setTryOnJobs(response.data.data?.jobs || []);
+      clearTimeout(timeoutId);
+      
+      // Only update state if we have valid data
+      if (response.data && response.data.data) {
+        setTryOnJobs(response.data.data?.jobs || []);
+      }
     } catch (error) {
+      // Don't log aborted requests as errors
+      if (error.name === 'AbortError' || error.name === 'CanceledError') {
+        console.log('Try-on jobs request aborted due to timeout');
+        return;
+      }
+      
       console.error('Error fetching try-on jobs:', error);
       // Don't show toast for background polling
     }
@@ -96,26 +148,91 @@ const TryOnInterface = () => {
       const payload = {
         modelId: selectedModel._id,
         garmentId: selectedGarment._id,
-        prompt: customPrompt.trim() || undefined
+        prompt: customPrompt.trim() || undefined,
+        indian_model: isIndianModel
       };
 
       // Add scene if selected
       if (selectedScene) {
         payload.sceneId = selectedScene._id;
       }
+      
+      // Create abort controller for timeout handling
+      const controller = new AbortController();
+      const timeoutDuration = 120000; // Increase timeout to 120 seconds (2 minutes)
+      const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
-      await axios.post('/api/tryon', payload, {
+      console.log('Submitting try-on job with payload:', {
+        ...payload,
+        modelUrl: selectedModel.url,
+        garmentUrl: selectedGarment.url,
+        sceneUrl: selectedScene?.url,
+        indian_model: isIndianModel
+      });
+
+      const response = await axios.post('/api/tryon', payload, {
         headers: {
           Authorization: `Bearer ${token}`
-        }
+        },
+        signal: controller.signal,
+        timeout: timeoutDuration // Axios timeout as backup
       });
       
-      toast.success('Try-on job submitted successfully!');
-      fetchTryOnJobs(); // Refresh the jobs list
+      clearTimeout(timeoutId);
+      
+      // Verify response data before showing success
+      if (response.data && (response.status === 200 || response.status === 202)) {
+        toast.success('Try-on job submitted successfully!');
+        console.log('Try-on job submitted successfully:', response.data);
+        // Wait a moment before refreshing to ensure server has processed the job
+        setTimeout(() => fetchTryOnJobs(), 1500);
+      } else {
+        console.warn('Unexpected response:', response);
+        toast.warning('Try-on job may not have been submitted correctly');
+      }
     } catch (error) {
-      console.error('Error submitting try-on job:', error);
-      const message = error.response?.data?.error || 'Failed to submit try-on job';
-      toast.error(message);
+      // Handle different error types
+      if (error.name === 'AbortError' || error.name === 'CanceledError') {
+        console.log('Try-on submission aborted due to timeout');
+        toast.error('Try-on submission timed out. Please try again.');
+      } else if (error.response) {
+        console.error('Error submitting try-on job:', error);
+        // Extract detailed error message
+        let errorMessage = 'Failed to submit try-on job';
+        
+        if (error.response.data) {
+          if (error.response.data.error) {
+            errorMessage = error.response.data.error;
+          } else if (error.response.data.message) {
+            errorMessage = error.response.data.message;
+          } else if (error.response.data.details?.message) {
+            errorMessage = error.response.data.details.message;
+          }
+        }
+        
+        // Show status code in error message for better debugging
+        toast.error(`Error (${error.response.status}): ${errorMessage}`);
+        
+        // If it's a 422 error (validation error), show more specific guidance
+        if (error.response.status === 422) {
+          toast.info('Please check that your model and garment images are valid and accessible. The BFL API requires valid image and mask parameters.');
+          console.log('422 Error Details:', error.response.data);
+        }
+        
+        // If it's a 500 error, suggest refreshing or trying again later
+        if (error.response.status === 500) {
+          toast.info('Server error. Please try refreshing the page or try again later.');
+          console.log('500 Error Details:', error.response.data);
+        }
+      } else if (error.request) {
+        // Request made but no response received
+        console.error('No response received for try-on job submission');
+        toast.error('No response from server. Please check your connection.');
+      } else {
+        // Something else went wrong
+        console.error('Error submitting try-on job:', error);
+        toast.error(`Failed to submit try-on job: ${error.message}`);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -155,6 +272,7 @@ const TryOnInterface = () => {
     return (
       <div className="flex justify-center items-center min-h-screen">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        <p className="ml-4 text-gray-600 font-medium">Loading try-on options...</p>
       </div>
     );
   }
@@ -188,11 +306,32 @@ const TryOnInterface = () => {
                 >
                   <div className="relative aspect-square">
                     <Image
-                      src={model.url}
-                      alt={`Model ${model._id}`}
+                      src={(() => {
+                        try {
+                          if (!model.url) return '/placeholder-model.jpg';
+                          
+                          // If URL is already absolute with http/https, use it directly
+                          if (model.url.startsWith('http')) {
+                            return model.url;
+                          }
+                          
+                          // For relative URLs, combine with API URL
+                          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+                          // Remove any duplicate slashes between API URL and path
+                          const normalizedPath = model.url.startsWith('/') ? model.url : `/${model.url}`;
+                          return `${apiUrl}${normalizedPath}`;
+                        } catch (error) {
+                          console.error('Error creating model image URL:', error);
+                          return '/placeholder-model.jpg';
+                        }
+                      })()}
+                      alt={`Model: ${model.name || 'Default model'}`}
                       fill
+                      priority
+                      crossOrigin="anonymous"
                       className="object-cover"
                       onError={(e) => {
+                        console.error(`Failed to load model image: ${model.url}`);
                         e.target.src = '/placeholder-model.jpg';
                       }}
                     />
@@ -238,11 +377,32 @@ const TryOnInterface = () => {
                 >
                   <div className="relative aspect-square">
                     <Image
-                      src={garment.url}
-                      alt={garment.name}
+                      src={(() => {
+                        try {
+                          if (!garment.url) return '/placeholder-garment.jpg';
+                          
+                          // If URL is already absolute with http/https, use it directly
+                          if (garment.url.startsWith('http')) {
+                            return garment.url;
+                          }
+                          
+                          // For relative URLs, combine with API URL
+                          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+                          // Remove any duplicate slashes between API URL and path
+                          const normalizedPath = garment.url.startsWith('/') ? garment.url : `/${garment.url}`;
+                          return `${apiUrl}${normalizedPath}`;
+                        } catch (error) {
+                          console.error('Error creating garment image URL:', error);
+                          return '/placeholder-garment.jpg';
+                        }
+                      })()}
+                      alt={`Garment: ${garment.name || 'Default garment'}`}
                       fill
+                      priority
                       className="object-cover"
+                      crossOrigin="anonymous"
                       onError={(e) => {
+                        console.error(`Failed to load garment image: ${garment.url}`);
                         e.target.src = '/placeholder-garment.jpg';
                       }}
                     />
@@ -288,12 +448,34 @@ const TryOnInterface = () => {
                 >
                   <div className="relative aspect-square">
                     <Image
-                      src={scene.url}
-                      alt={scene.name}
+                      src={(() => {
+                        try {
+                          if (!scene.url) return '/placeholder-scene.jpg';
+                          
+                          // If URL is already absolute with http/https, use it directly
+                          if (scene.url.startsWith('http')) {
+                            return scene.url;
+                          }
+                          
+                          // For relative URLs, combine with API URL
+                          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+                          // Remove any duplicate slashes between API URL and path
+                          const normalizedPath = scene.url.startsWith('/') ? scene.url : `/${scene.url}`;
+                          return `${apiUrl}${normalizedPath}`;
+                        } catch (error) {
+                          console.error('Error creating scene image URL:', error);
+                          return '/placeholder-scene.jpg';
+                        }
+                      })()}
+                      alt={`Scene: ${scene.name || 'Default scene'}`}
                       fill
+                      priority
+                      crossOrigin="anonymous"
                       className="object-cover"
                       onError={(e) => {
-                        e.target.src = '/placeholder-scene.jpg';
+                        console.error(`Failed to load scene image: ${scene.url}`);
+                        const svgImage = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 300 300"><rect width="300" height="300" fill="%23f0f0f0"/><text x="50%" y="50%" font-family="Arial" font-size="14" text-anchor="middle" fill="%23999">Image not available</text></svg>`;
+                        e.target.src = svgImage;
                       }}
                     />
                   </div>
@@ -339,6 +521,20 @@ const TryOnInterface = () => {
             disabled={submitting}
           />
         </div>
+        
+        <div className="mb-4 flex items-center">
+          <input
+            type="checkbox"
+            id="isIndianModel"
+            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+            checked={isIndianModel}
+            onChange={(e) => setIsIndianModel(e.target.checked)}
+            disabled={submitting}
+          />
+          <label htmlFor="isIndianModel" className="ml-2 block text-sm text-gray-700">
+            Apply to Indian model (automatically enhances prompt for Indian ethnicity)
+          </label>
+        </div>
 
         <div className="flex items-center justify-between">
           <div>
@@ -382,34 +578,55 @@ const TryOnInterface = () => {
                 <div className="relative aspect-square bg-gray-100">
                   {job.status === 'completed' && job.resultUrl ? (
                     <Image
-                      src={job.resultUrl}
-                      alt="Try-on result"
-                      fill
-                      className="object-cover"
-                      onError={(e) => {
-                        e.target.src = '/placeholder-result.jpg';
-                      }}
+                        src={(() => {
+                          try {
+                            if (!job.resultUrl) return '/placeholder-result.jpg';
+                            
+                            // If URL is already absolute with http/https, use it directly
+                            if (job.resultUrl.startsWith('http')) {
+                              return job.resultUrl;
+                            }
+                            
+                            // For relative URLs, combine with API URL
+                            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+                            // Remove any duplicate slashes between API URL and path
+                            const normalizedPath = job.resultUrl.startsWith('/') ? job.resultUrl : `/${job.resultUrl}`;
+                            return `${apiUrl}${normalizedPath}`;
+                          } catch (error) {
+                            console.error('Error creating result image URL:', error);
+                            return '/placeholder-result.jpg';
+                          }
+                        })()}
+                        alt={`Try-on result for model with garment ${job.id || ''}`}
+                        fill
+                        priority
+                        crossOrigin="anonymous"
+                        className="object-cover rounded-lg"
+                        onError={(e) => {
+                          console.error(`Failed to load result image: ${job.resultUrl}`);
+                          e.target.src = '/placeholder-result.jpg';
+                        }}
                     />
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center">
                       {job.status === 'processing' ? (
                         <div className="flex flex-col items-center">
                           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-3"></div>
-                          <p className="text-gray-600">Processing try-on...</p>
+                          <p className="text-gray-600">Processing try-on...<span className="animate-pulse">⋯</span></p>
                         </div>
                       ) : job.status === 'failed' ? (
                         <div className="flex flex-col items-center text-red-600">
                           <XCircle className="w-12 h-12 mb-3" />
                           <p>Try-on failed</p>
                           {job.errorMessage && (
-                            <p className="text-xs text-center mt-2 max-w-[200px] truncate" title={job.errorMessage}>
+                            <p className="text-xs text-center mt-2 max-w-[200px] truncate bg-red-50 p-1 rounded" title={job.errorMessage}>
                               {job.errorMessage}
                             </p>
                           )}
                         </div>
                       ) : (
                         <div className="flex flex-col items-center">
-                          <AlertCircle className="w-12 h-12 text-yellow-500 mb-3" />
+                          <AlertCircle className="w-12 h-12 text-yellow-500 mb-3 animate-pulse" />
                           <p className="text-gray-600">Pending</p>
                         </div>
                       )}

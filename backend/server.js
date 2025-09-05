@@ -86,6 +86,15 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 
+// File upload middleware
+const fileUpload = require('express-fileupload');
+app.use(fileUpload({
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max file size
+  useTempFiles: true,
+  tempFileDir: '/tmp/',
+  createParentPath: true
+}));
+
 // Static files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 console.log('Static files path:', path.join(__dirname, 'uploads'));

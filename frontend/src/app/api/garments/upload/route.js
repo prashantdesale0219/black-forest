@@ -13,7 +13,7 @@ export async function POST(request) {
     }
 
     const formData = await request.formData();
-    const garmentFile = formData.get('garment');
+    const garmentFile = formData.get('image');
     
     if (!garmentFile) {
       return NextResponse.json({ error: 'No garment file uploaded' }, { status: 400 });
@@ -37,18 +37,19 @@ export async function POST(request) {
     // Create a new FormData to send to the backend
     const backendFormData = new FormData();
     const fileBlob = new Blob([buffer], { type: garmentFile.type });
-    backendFormData.append('garment', fileBlob, garmentFile.name);
+    backendFormData.append('image', fileBlob, garmentFile.name);
     
     // Add other form fields
     for (const [key, value] of formData.entries()) {
-      if (key !== 'garment') {
+      if (key !== 'image') {
         backendFormData.append(key, value);
       }
     }
 
     // Forward the request to the backend
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
     const response = await axios.post(
-      `${process.env.BACKEND_URL}/api/garments/upload`,
+      `${backendUrl}/api/garments/upload`,
       backendFormData,
       {
         headers: {

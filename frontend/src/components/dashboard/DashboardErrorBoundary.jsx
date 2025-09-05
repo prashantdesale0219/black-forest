@@ -38,13 +38,22 @@ export default function DashboardErrorBoundary({ children }) {
         return;
       }
 
+      // Ignore image loading errors
+      if (event.target && event.target.tagName === 'IMG') {
+        event.preventDefault();
+        return;
+      }
+
       // Check if error exists before logging
       if (event.error) {
         console.error('Dashboard error caught:', event.error);
         setError(event.error);
       } else {
         // Handle undefined errors gracefully
-        console.warn('Dashboard undefined error caught');
+        // Only log once to reduce console spam
+        if (Math.random() < 0.1) { // Log only ~10% of undefined errors
+          console.warn('Dashboard undefined error caught');
+        }
         // Don't set error for undefined errors
       }
     };

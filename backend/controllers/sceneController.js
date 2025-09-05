@@ -5,6 +5,7 @@ const bflService = require('../services/bflService');
 const { AppError } = require('../middleware/errorHandler');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 
 /**
  * Controller for scene-related operations
@@ -120,8 +121,8 @@ const sceneController = {
         return next(new AppError('Scene name is required', 400));
       }
       
-      // Create file URL
-      const fileUrl = `${req.protocol}://${req.get('host')}/uploads/misc/${req.file.filename}`;
+      // Create file URL - using absolute path instead of full URL
+      const fileUrl = `/uploads/misc/${req.file.filename}`;
       
       // Create scene record
       const scene = new Scene({
@@ -294,8 +295,8 @@ const sceneController = {
       
       // If it's an uploaded scene, delete the file
       if (scene.type === 'uploaded' && scene.url) {
-        const filePath = scene.url.replace(`${req.protocol}://${req.get('host')}`, '');
-        const fullPath = path.join(__dirname, '..', filePath);
+        // URL is already an absolute path
+        const fullPath = path.join(__dirname, '..', scene.url);
         
         if (fs.existsSync(fullPath)) {
           fs.unlinkSync(fullPath);
@@ -403,13 +404,58 @@ async function processSceneGeneration(pollingUrl, sceneId, userId, credits) {
     const result = await bflService.pollWithBackoff(pollingUrl);
     
     if (result.status === 'succeeded' && result.result && result.result.sample) {
-      // Update scene with result URL
-      await Scene.findByIdAndUpdate(sceneId, {
-        url: result.result.sample,
-        updatedAt: Date.now()
-      });
-      
-      console.log(`Scene generation completed for scene ${sceneId}`);
+      try {
+        // Download the image from BFL API
+        const imageUrl = result.result.sample;
+        const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+        
+        // Generate a unique filename
+        const timestamp = Date.now();
+        const fileExtension = 'jpeg'; // BFL API returns jpeg by default
+        const filename = `scene_${sceneId}_${timestamp}.${fileExtension}`;
+        
+        // Save the file to local filesystem
+        const filePath = path.join(__dirname, '..', 'uploads', 'scenes', filename);
+        
+        // Ensure directory exists
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        
+        // Write the file
+        fs.writeFileSync(filePath, response.data);
+        
+        // Update scene with local file URL (absolute path)
+        const fileUrl = `/uploads/scenes/${filename}`;
+        await Scene.findByIdAndUpdate(sceneId, {
+          url: fileUrl,
+          updatedAt: Date.now()
+        });
+        
+        console.log(`Scene generation completed for scene ${sceneId}, saved to ${filePath}`);
+      } catch (downloadError) {
+        console.error(`Failed to download and save scene image for ${sceneId}:`, downloadError);
+        
+        // Update scene with error status
+        await Scene.findByIdAndUpdate(sceneId, {
+          url: 'error',
+          updatedAt: Date.now()
+        });
+        
+        // Refund credits to user
+        await User.findByIdAndUpdate(userId, {
+          $inc: { 'credits.balance': credits, 'credits.totalUsed': -credits }
+        });
+        
+        // Log error
+        await new UsageLog({
+          userId,
+          action: 'scene_change',
+          creditsUsed: -credits, // Negative to indicate refund
+          details: { sceneId, error: 'Failed to download image', originalError: downloadError.message }
+        }).save();
+      }
     } else {
       console.error(`Scene generation failed for scene ${sceneId}:`, result);
       

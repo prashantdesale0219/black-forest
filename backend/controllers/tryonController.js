@@ -78,7 +78,12 @@ const tryOnController = {
       const params = {
         model_url: model.url,
         garment_url: garment.url,
-        output_format: 'jpeg'
+        output_format: 'jpeg',
+        // Add required parameters for BFL API - these will be converted to base64 in bflService
+        image: model.url,  // Use model URL as the base image
+        garment: garment.url,  // Use garment URL for the clothing item
+        // Add Indian model specific parameters
+        indian_model: true
       };
       
       // Add scene if provided
@@ -86,13 +91,42 @@ const tryOnController = {
         params.background_url = scene.url;
       }
       
-      // Add custom prompt if provided
+      // Add custom prompt if provided, or use default Indian model prompt
       if (prompt) {
         params.prompt = prompt;
+      } else {
+        // Default prompt for Indian model try-on
+        params.prompt = 'Indian model wearing the provided garment, realistic fabric texture and draping, studio lighting, high quality, detailed features';
       }
       
       // Call BFL API to create try-on job
-      const result = await bflService.editImage(params);
+      let result;
+      try {
+        result = await bflService.editImage(params);
+        console.log('BFL API response:', result);
+        
+        // Validate job ID
+        if (!result || !result.id) {
+          console.error('Missing job ID in BFL API response:', result);
+          return next(new AppError('Invalid response from BFL API: missing job ID', 500));
+        }
+        
+        // Validate polling URL
+        if (!result.polling_url) {
+          console.error('Missing polling URL in BFL API response:', result);
+          return next(new AppError('Invalid response from BFL API: missing polling URL', 500));
+        }
+      } catch (error) {
+        console.error('BFL API error:', error);
+        // Include response data in error log if available
+        if (error.response) {
+          console.error('BFL API error response:', {
+            status: error.response.status,
+            data: error.response.data
+          });
+        }
+        return next(new AppError(`Try-on service error: ${error.message}`, error.status || 500));
+      }
       
       // Create try-on job record
       const tryOnJob = new TryOnJob({
@@ -338,13 +372,35 @@ async function processTryOnJob(jobId, userId, credits) {
   try {
     const tryOnJob = await TryOnJob.findById(jobId);
     
-    if (!tryOnJob || !tryOnJob.pollingUrl) {
-      console.error(`Invalid try-on job or polling URL for job ${jobId}`);
+    if (!tryOnJob) {
+      console.error(`Try-on job not found for ID ${jobId}`);
       return;
     }
     
+    if (!tryOnJob.pollingUrl) {
+      console.error(`Missing polling URL for job ${jobId}`);
+      tryOnJob.status = 'failed';
+      tryOnJob.errorMessage = 'Missing polling URL';
+      await tryOnJob.save();
+      await refundCredits(userId, credits, jobId, 'Missing polling URL');
+      return;
+    }
+    
+    console.log(`Processing try-on job ${jobId} with polling URL: ${tryOnJob.pollingUrl}`);
+    
     // Poll for results with exponential backoff
-    const result = await bflService.pollWithBackoff(tryOnJob.pollingUrl);
+    let result;
+    try {
+      result = await bflService.pollWithBackoff(tryOnJob.pollingUrl);
+      console.log(`Poll result for job ${jobId}:`, result);
+    } catch (error) {
+      console.error(`Polling error for job ${jobId}:`, error);
+      tryOnJob.status = 'failed';
+      tryOnJob.errorMessage = `Polling error: ${error.message}`;
+      await tryOnJob.save();
+      await refundCredits(userId, credits, jobId, error.message);
+      return;
+    }
     
     if (result.status === 'succeeded' && result.result && result.result.sample) {
       // Update job with result URL
@@ -400,6 +456,35 @@ async function processTryOnJob(jobId, userId, credits) {
     } catch (innerError) {
       console.error(`Error updating failed try-on job ${jobId}:`, innerError);
     }
+  }
+}
+
+/**
+ * Helper function to refund credits to user
+ * @param {string} userId - User ID
+ * @param {number} credits - Credits to refund
+ * @param {string} jobId - Job ID
+ * @param {string} errorMessage - Error message
+ */
+async function refundCredits(userId, credits, jobId, errorMessage) {
+  try {
+    // Refund credits to user
+    await User.findByIdAndUpdate(userId, {
+      $inc: { 'credits.balance': credits, 'credits.totalUsed': -credits }
+    });
+    
+    // Log refund
+    await new UsageLog({
+      userId,
+      action: 'tryon_refund',
+      creditsUsed: -credits, // Negative to indicate refund
+      jobId: jobId,
+      details: { tryOnJobId: jobId, error: errorMessage }
+    }).save();
+    
+    console.log(`Refunded ${credits} credits to user ${userId} for job ${jobId}`);
+  } catch (error) {
+    console.error(`Failed to refund credits for job ${jobId}:`, error);
   }
 }
 

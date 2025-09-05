@@ -27,12 +27,12 @@ const garmentController = {
         return next(new AppError('Garment name is required', 400));
       }
       
-      if (!category || !['top', 'bottom', 'dress', 'outerwear', 'accessory', 'footwear', 'other'].includes(category)) {
+      if (!category || !['shirt', 'tshirt', 'pants', 'dress', 'jacket', 'sweater', 'skirt', 'other'].includes(category)) {
         return next(new AppError('Valid garment category is required', 400));
       }
       
-      // Create file URL
-      const fileUrl = `${req.protocol}://${req.get('host')}/uploads/clothes/${req.file.filename}`;
+      // Create file URL - use absolute path to ensure proper image loading
+      const fileUrl = `/uploads/garments/${req.file.filename}`;
       
       // Create garment record
       const garment = new Garment({
@@ -71,7 +71,7 @@ const garmentController = {
       const { page = 1, limit = 10, category } = req.query;
       
       const query = { userId };
-      if (category && ['top', 'bottom', 'dress', 'outerwear', 'accessory', 'footwear', 'other'].includes(category)) {
+      if (category && ['shirt', 'tshirt', 'pants', 'dress', 'jacket', 'sweater', 'skirt', 'other'].includes(category)) {
         query.category = category;
       }
       

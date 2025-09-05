@@ -1,0 +1,14 @@
+BFL API Test - 2025-09-04T06:11:25.047Z
+
+[2025-09-04T06:11:25.049Z] Starting BFL API test
+[2025-09-04T06:11:25.071Z] 
+Visiting BFL playground URL: https://playground.bfl.ai/image/generate/8ea55818-a284-4663-999b-0b4e5d9427f5
+[2025-09-04T06:11:25.388Z] Error accessing playground: Request failed with status code 429
+[2025-09-04T06:11:25.391Z] 
+Checking BFL documentation: https://docs.bfl.ai/quick_start/introduction
+[2025-09-04T06:11:25.699Z] Documentation response status: 200
+[2025-09-04T06:11:25.701Z] Documentation HTML content length: 180510
+[2025-09-04T06:11:25.702Z] No specific garment documentation found
+[2025-09-04T06:11:25.703Z] 
+Test completed successfully
+[2025-09-04T06:11:25.705Z] Test script execution completed

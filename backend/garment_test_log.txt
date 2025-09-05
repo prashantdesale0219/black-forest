@@ -1,0 +1,36 @@
+Garment Processing Test - 2025-09-04T06:10:50.262Z
+
+[2025-09-04T06:10:50.265Z] Starting garment processing test
+[2025-09-04T06:10:50.267Z] 
+Test Case 1: URL-based garment
+[2025-09-04T06:10:50.271Z] Testing with garment_url: http://localhost:5000/uploads/cloth_images/sample.jpg
+[2025-09-04T06:10:50.273Z] Would process URL-based garment with these parameters:
+[2025-09-04T06:10:50.275Z] {
+  "prompt": "A professional model wearing a stylish outfit",
+  "garment_url": "http://localhost:5000/uploads/cloth_images/sample.jpg",
+  "width": 1024,
+  "height": 1024
+}
+[2025-09-04T06:10:50.282Z] 
+Test Case 2: Base64-based garment
+[2025-09-04T06:10:50.301Z] Testing with base64 garment data
+[2025-09-04T06:10:50.303Z] Would process base64 garment with these parameters:
+[2025-09-04T06:10:50.304Z] {
+  "prompt": "A professional model wearing a stylish outfit",
+  "garment": "base64_data_truncated",
+  "width": 1024,
+  "height": 1024
+}
+[2025-09-04T06:10:50.309Z] 
+Test Case 3: garment_url with base64 data
+[2025-09-04T06:10:50.313Z] Testing with garment_url containing base64 data
+[2025-09-04T06:10:50.316Z] Would process mixed case with these parameters:
+[2025-09-04T06:10:50.317Z] {
+  "prompt": "A professional model wearing a stylish outfit",
+  "garment_url": "base64_data_truncated",
+  "width": 1024,
+  "height": 1024
+}
+[2025-09-04T06:10:50.323Z] 
+Test completed successfully
+[2025-09-04T06:10:50.328Z] Test script execution completed
